@@ -1,3 +1,4 @@
+# Python
 .venv
 __pycache__/ 
 *.pyc 
@@ -11,8 +12,16 @@ build/
 .pytest_cache/ 
 .coverage* 
 htmlcov/
+
+# Git 
 .git 
 .gitignore 
+
+# Environment variables
 .env 
 .env.* 
+
+# Rust 
+target/ 
+**/target/ 
 

@@ -29,3 +29,12 @@ create-default-env reset="false":
       echo "created: $dst"
     done
     exit $status
+
+reset-volumes:
+    docker compose down --volumes
+
+up:
+    sudo docker compose up --build
+
+down:
+    sudo docker compose down

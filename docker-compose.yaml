@@ -1,12 +1,22 @@
+x-defaults:
+  x-postgres-healthcheck: &x-postgres-healthcheck 
+    healthcheck: 
+      test: ["CMD-SHELL", "pg_is_ready -U postgres -h localhost"]
+      interval: 5s 
+      timeout: 5s 
+      retries: 20 
+
 services:
   # ----- infra -----
-  
   kafka:
     container_name: "kafka"
     image: bitnami/kafka:latest 
     env_file: ./infra/env/.kafka.env
+    volumes:
+      - kafka-data:/bitname/kafka 
     ports:
       - 29092:29092
+      - 9092:9092
     healthcheck:
       test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics/sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
       interval: 10s 
@@ -15,8 +25,8 @@ services:
 
   kafka-ui:
     container_name: kafka-ui 
-    env_file: ./infra/env/.kafka_ui.env
     image: provectuslabs/kafka-ui:latest 
+    env_file: ./infra/env/.kafka_ui.env
     ports: 
       - 8081:8080 
     depends_on:
@@ -48,28 +58,73 @@ services:
     ports:
       - 80:80 
       - 8080:8080
-    depends_on: [catalog, orders, payments, recommendations, notifications]
+    depends_on: [catalog, orders, payments, notifications]
 
-  # ----- templates -----
-  x-database-healthcheck: &x-database-healthcheck 
-    healthcheck: 
-      test: ["CMD-SHELL", "pg_is_ready -U postgres -h localhost"]
-      interval: 5s 
-      timeout: 5s 
-      retries: 20 
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: prometheus 
+    command: [
+      "--config.file=/etc/prometheus/prometheus.yml",
+      "--storage.tsdb.retention.time=15d",
+    ]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro 
+      - prometheus_data:/prometheus 
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+  
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana 
+    environment: 
+      - GF_SECURITY_ADMIN_USER=admin 
+      - GF_SECURITY_ADMIN_PASSWORD=admin 
+    volumes:
+      - grafana_data:/var/lib/grafana 
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro 
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki 
 
-  # ----- databases -----
-  auth-users-db:  # auth + users database-healthcheck 
-    <<: [*x-database-healthcheck]
+  loki:
+    image: grafana/loki:main-37eddab
+    container_name: loki 
+    command: ["-config.file=/etc/loki/local-config.yml", "-validation.allow-structured-metadata=false"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/loki/local-config.yml:/etc/loki/local-config.yml:ro 
+      - loki_data:/loki 
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:main-37eddab
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - /var/log:/var/log:ro 
+      - /var/run/docker.sock:/var/run/docker.sock:ro 
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro 
+      - ./infra/promtail/config.yml:/etc/promtail/config.yml:ro
+    depends_on: 
+      - loki 
+    restart: unless-stopped
+
+    # ----- databases -----
+  auth-users-db:  # auth + users postgres-healthcheck 
+    <<: *x-postgres-healthcheck
     image: postgres:16
     container_name: auth-users-db 
-    env_file: ./infra/env/.auth_users_db.env.env 
+    env_file: ./infra/env/.auth_users_db.env 
     ports: ["5433:5432"]
     volumes: 
       - pgdata-auth-users:/var/lib/postgresql/data 
 
-  orders-payments-db:  # orders + payments database-healthcheck
-    <<: [*x-database-healthcheck]
+  orders-payments-db:  # orders + payments postgres-healthcheck
+    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: orders-payments-db 
     env_file: ./infra/env/.orders_payments_db.env 
@@ -78,7 +133,7 @@ services:
       - pgdata-orders-payments:/var/lib/postgresql/data 
 
   catalog-db:
-    <<: [*x-database-healthcheck]
+    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: catalog-db 
     env_file: ./infra/env/.catalog.env 
@@ -87,7 +142,7 @@ services:
       - pgdata-catalog:/var/lib/postgresql/data 
 
   notifications-db:
-    <<: [*x-database-healthcheck]
+    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: notifications-db
     env_file: ./infra/env/example.notifications_db.env
@@ -96,16 +151,16 @@ services:
       - pgdata-notifications:/var/lib/postgresql/data 
 
   # ----- services -----
-  auth:
-    build: ./services/auth
-    container_name: auth 
-    env_file: ./infra/env/.auth.env 
-    ports: ["8005:8080"]
-    depends_on: 
-      auth-users-db: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      kafka: { condition: service_healthy }
-
+  # auth:
+  #   build: ./services/auth
+  #   container_name: auth 
+  #   env_file: ./infra/env/.auth.env 
+  #   ports: ["8005:8080"]
+  #   depends_on: 
+  #     auth-users-db: { condition: service_healthy }
+  #     redis: { condition: service_healthy }
+  #     kafka: { condition: service_healthy }
+  #
   users:
     build: ./services/users 
     container_name: users 
@@ -153,17 +208,21 @@ services:
       notifications-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
       mailhog: { condition: service_started }
-
-  recommendations:
-    container_name: recommendations
-    build: ./services/recommendations
-    env_file: ./infra/env/.recommendation.env 
-    ports: ["8007:8080"]
-    depends_on:
-      kafka: { condition: service_healthy }
-
+  #
+  # recommendations:
+  #   container_name: recommendations
+  #   build: ./services/recommendations
+  #   env_file: ./infra/env/.recommendation.env 
+  #   ports: ["8007:8080"]
+  #   depends_on:
+  #     kafka: { condition: service_healthy }
+  #
 
 volumes:
+  kafka-data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
   pgdata-auth-users:
   pgdata-orders-payments:
   pgdata-catalog:
