@@ -1,4 +1,10 @@
+# environment variables
+.env 
 infra/env/.*.env 
 !infra/env/example.*.env
-.htpasswd
 
+# build output
+services/core/dist/*
+
+# local pypi password file
+.htpasswd
