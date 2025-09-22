@@ -6,8 +6,24 @@ x-defaults:
       timeout: 5s 
       retries: 20 
 
+networks:
+  web: {}
+  proxy:
+    name: proxy
+
 services:
   # ----- infra -----
+  pypi:
+    container_name: "pypi"
+    image: pypiserver/pypiserver:latest 
+    command: -P /data/.htpasswd -a update,download,list -p 8080 /data/packages 
+    volumes:
+      - ./pypi-data/packages:/data/packages 
+      - ./pypi-data/.htpasswd:/data/.htpasswd:ro 
+    ports:
+      - "8010:8080"
+    profiles: ["pypi"]
+
   kafka:
     container_name: "kafka"
     image: bitnami/kafka:latest 
@@ -20,8 +36,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics/sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
       interval: 10s 
-      timeout: 5s 
       retries: 10 
+      timeout: 5s 
+    profiles: ["users", "catalog", "auth", "notifications", "recommendations"]
 
   kafka-ui:
     container_name: kafka-ui 
@@ -32,6 +49,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    profiles: ["monitoring"]
 
   redis:
     container_name: redis 
@@ -43,6 +61,7 @@ services:
       interval: 5s 
       timeout: 3s 
       retries: 20 
+    profiles: ["auth"]
 
   mailhog:
     image: mailhog/mailhog:latest 
@@ -50,16 +69,18 @@ services:
     ports:
       - "1025:1025"  # SMTP
       - "8025:8025"  # Web UI 
-
-  gateway: 
-    container_name: "gateway"
-    image: traefik:v3.5.2
-    command: ["--api.insecure=true", "--providers.docker=true", "--entrypoints.web.address=:80"]
-    ports:
-      - 80:80 
-      - 8080:8080
-    depends_on: [catalog, orders, payments, notifications]
-
+    profiles: ["notifications"]
+  #
+  # gateway: 
+  #   container_name: "gateway"
+  #   image: nginx:1.27-alpine 
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+  #   depends_on: [catalog, orders, payments, notifications]
+  #   networks: [web]
+  #
   prometheus:
     image: prom/prometheus:v2.53.1
     container_name: prometheus 
@@ -73,7 +94,8 @@ services:
     ports:
       - "9090:9090"
     restart: unless-stopped
-  
+    profiles: ["monitoring"]
+
   grafana:
     image: grafana/grafana:11.1.0
     container_name: grafana 
@@ -88,17 +110,23 @@ services:
     depends_on:
       - prometheus
       - loki 
+    profiles: ["monitoring"]
 
   loki:
     image: grafana/loki:main-37eddab
     container_name: loki 
-    command: ["-config.file=/etc/loki/local-config.yml", "-validation.allow-structured-metadata=false"]
+    command: [
+      "-config.file=/etc/loki/local-config.yml", 
+      # "-validation.allow-structured-metadata=false",
+      "-config.expand-env=true"
+    ]
     ports:
       - "3100:3100"
     volumes:
       - ./infra/loki/local-config.yml:/etc/loki/local-config.yml:ro 
       - loki_data:/loki 
     restart: unless-stopped
+    profiles: ["monitoring"]
 
   promtail:
     image: grafana/promtail:main-37eddab
@@ -112,6 +140,13 @@ services:
     depends_on: 
       - loki 
     restart: unless-stopped
+    profiles: ["monitoring"]
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    ports:
+      - 9100:9100
+    profiles: ["monitoring"]
 
     # ----- databases -----
   auth-users-db:  # auth + users postgres-healthcheck 
@@ -122,6 +157,7 @@ services:
     ports: ["5433:5432"]
     volumes: 
       - pgdata-auth-users:/var/lib/postgresql/data 
+    profiles: ["auth", "users"]
 
   orders-payments-db:  # orders + payments postgres-healthcheck
     <<: [*x-postgres-healthcheck]
@@ -131,6 +167,7 @@ services:
     ports: ["5434:5432"]
     volumes:
       - pgdata-orders-payments:/var/lib/postgresql/data 
+    profiles: ["orders", "payments"]
 
   catalog-db:
     <<: [*x-postgres-healthcheck]
@@ -140,6 +177,7 @@ services:
     ports: ["5435:5432"]
     volumes:
       - pgdata-catalog:/var/lib/postgresql/data 
+    profiles: ["catalog"]
 
   notifications-db:
     <<: [*x-postgres-healthcheck]
@@ -149,74 +187,95 @@ services:
     ports: ["5436:5432"]
     volumes: 
       - pgdata-notifications:/var/lib/postgresql/data 
+    profiles: ["notifications"]
 
   # ----- services -----
-  # auth:
-  #   build: ./services/auth
-  #   container_name: auth 
-  #   env_file: ./infra/env/.auth.env 
-  #   ports: ["8005:8080"]
-  #   depends_on: 
-  #     auth-users-db: { condition: service_healthy }
-  #     redis: { condition: service_healthy }
-  #     kafka: { condition: service_healthy }
-  #
+  auth:
+    build: ./services/auth
+    container_name: auth 
+    env_file: ./infra/env/.auth.env 
+    ports: ["8005:8080"]
+    depends_on: 
+      auth-users-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    profiles: ["auth"]
+
   users:
-    build: ./services/users 
+    build: 
+      context: ./services/users
+      args:
+        LOCAL_PYPI_URL: $LOCAL_PYPI_URL
+        LOCAL_PYPI_USER: $LOCAL_PYPI_USER 
+        LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD 
     container_name: users 
-    env_file: ./infra/env/.users.env 
+    env_file: 
+      - ./infra/env/.users.env
+    volumes:
+      - ./services/users:/app
     ports: ["8001:8000"]
+    networks: [web]
     depends_on:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
+    profiles: ["users"]
 
   catalog:
     container_name: catalog 
     build: ./services/catalog
     env_file: ./infra/env/.catalog.env 
     ports: ["8002:8000"]
+    networks: [web]
     depends_on:
       catalog-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
+    profiles: ["catalog"]
 
   orders:
     container_name: orders 
     build: ./services/orders 
     env_file: ./infra/env/.orders.env
     ports: ["8003:8000"]
+    networks: [web]
     depends_on:
       orders-payments-db: { condition: service_healthy }
       kafka: {condition: service_healthy }
       # payments: { conditions: service_healthy }
-  
+    profiles: ["orders"]
+
   payments:
     container_name: payments
     build: ./services/payments 
     env_file: ./infra/env/.payments.env
     ports: ["8006:8080"]
+    networks: [web]
     depends_on:
       orders-payments-db: { condition: service_healthy }
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
+    profiles: ["payments"]
 
   notifications: 
     container_name: notifications
     build: ./services/notifications 
     env_file: ./infra/env/.notifications.env 
     ports: ["8004:8000"]
+    networks: [web]
     depends_on: 
       notifications-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
       mailhog: { condition: service_started }
-  #
-  # recommendations:
-  #   container_name: recommendations
-  #   build: ./services/recommendations
-  #   env_file: ./infra/env/.recommendation.env 
-  #   ports: ["8007:8080"]
-  #   depends_on:
-  #     kafka: { condition: service_healthy }
-  #
+    profiles: ["notifications"]
+
+  recommendations:
+    container_name: recommendations
+    build: ./services/recommendations
+    env_file: ./infra/env/.recommendation.env 
+    ports: ["8007:8080"]
+    depends_on:
+      kafka: { condition: service_healthy }
+    profiles: ["recommendations"]
+
 
 volumes:
   kafka-data:

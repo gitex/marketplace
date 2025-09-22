@@ -1,0 +1,25 @@
+[project]
+name = "core"
+version = "0.3.0"
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+packages = [{ include = "core", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.116.2"
+sqlmodel = "^0.0.25"
+asyncpg = "^0.30.0"
+pydantic-settings = "^2.10.1"
+
+[[tool.poetry.source]]
+name = "local"
+url = "http://localhost:8010/"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

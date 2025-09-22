@@ -1,2 +1,4 @@
 infra/env/.*.env 
 !infra/env/example.*.env
+.htpasswd
+

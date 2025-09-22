@@ -1,0 +1,29 @@
+[private]
+default:
+    @just --list
+
+# Получить версию из pyproject.toml
+current-version:
+    poetry version
+
+published-version:
+    poetry show core --latest 
+
+# Очистить предыдущие сборки
+clean:
+    rm -rf dist
+
+# Собрать пакет core для публикации
+build:
+    poetry build
+
+# Настройка аутентификации для публикации в локальный репозиторий
+auth username password:
+    poetry config http-basic.local {{ username }} {{ password }}
+
+# Опубликовать пакет core в локальный репозиторий
+publish:
+    poetry publish --repository local 
+
+# Выполнить сборку и публикацию пакета core
+sync: build publish

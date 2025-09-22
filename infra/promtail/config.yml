@@ -9,41 +9,10 @@ positions:
   filename: /tmp/positions.yaml
 
 scrape_configs:
-  # Автообнаружение контейнеров через docker.sock
-  - job_name: docker
-    docker_sd_configs:
-      - host: unix:///var/run/docker.sock
-        refresh_interval: 10s
-
-    # Базовые лейблы
-    relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        regex: '/(.*)'
-        target_label: container
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
-        target_label: compose_service
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
-        target_label: compose_project
-      - source_labels: ['__meta_docker_container_log_stream']
-        target_label: stream
-      - source_labels: ['__meta_docker_container_label_org_opencontainers_image_title']
-        target_label: image_title
-      # Убираем шум из Loki-стека, если не нужен
-      - source_labels: ['container']
-        regex: '(promtail|loki|prometheus|grafana)'
-        action: drop
-
-    pipeline_stages:
-      # Если приложения логируют JSON, распарсим:
-      - json:
-          expressions:
-            level: level|severity
-            msg: message|msg
-            logger: logger
-            ts: time|timestamp
-      # Нормализуем уровень, если есть
-      - labels:
-          level:
-          logger:
-          compose_service:
-          stream:
+- job_name: system
+  static_configs:
+  - targets:
+      - "localhost"
+    labels:
+      job: varlogs
+      __path__: /var/log/*log

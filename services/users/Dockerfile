@@ -21,7 +21,17 @@ RUN curl -sSL https://install.python-poetry.org | python - \
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock* ./ 
+ARG LOCAL_PYPI_URL
+ARG LOCAL_PYPI_USER
+ARG LOCAL_PYPI_PASSWORD
+
+ENV POETRY_REPOSITORIES_LOCAL_URL=${LOCAL_PYPI_URL}
+ENV POETRY_HTTP_BASIC_LOCAL_USERNAME=${LOCAL_PYPI_USER}
+ENV POETRY_HTTP_BASIC_LOCAL_PASSWORD=${LOCAL_PYPI_PASSWORD}
+
+COPY pyproject.toml poetry.lock ./ 
+
+# RUN poetry source add --priority=primary local ${LOCAL_PYPI_URL}
 
 ARG INSTALL_DEV=false 
 RUN if [ "$INSTALL_DEV" = "true" ]; then \

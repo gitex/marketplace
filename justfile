@@ -1,4 +1,11 @@
+#!/usr/bin/env just --justfile
+
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set dotenv-load := true
+set export := true
+
+default:
+    @just --list
 
 ENV_DIR := "./infra/env"
 
@@ -33,8 +40,27 @@ create-default-env reset="false":
 reset-volumes:
     docker compose down --volumes
 
-up:
-    sudo docker compose up --build
+PYPI_PROFILE := "pypi"
 
-down:
-    sudo docker compose down
+up target="users":
+    sudo docker compose --profile {{ PYPI_PROFILE }} up -d
+    sudo docker compose --profile {{ target }} up 
+
+down target="users":
+    sudo docker compose --profile {{ PYPI_PROFILE }} down --remove-orphans
+    sudo docker compose --profile {{ target }} down --remove-orphans
+
+ps:
+    sudo docker compose ps --all
+
+logs target:
+    sudo docker logs -f {{ target }} 
+
+status:
+    sudo docker compose ps --all --format '{{ "{{" }}.State{{ "}}" }} {{ "{{" }}.Service{{ "}}" }}' | \
+    while read -r state service; do \
+      if [[ "$state" == "running" ]]; then icon="✅"; else icon="❌"; fi; \
+      printf "%s \033[36m%s\033[0m\n" "$icon" "$service"; \
+    done
+
+alias st := status

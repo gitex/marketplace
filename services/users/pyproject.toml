@@ -6,7 +6,7 @@ authors = [
     {name = "Your Name",email = "you@example.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<4.0"
 dependencies = [
     "fastapi (>=0.116.2,<0.117.0)",
     "uvicorn (>=0.36.0,<0.37.0)",
@@ -20,12 +20,14 @@ dependencies = [
     "alembic (>=1.16.5,<2.0.0)",
     "prometheus-client (>=0.23.1,<0.24.0)",
     "opentelemetry-instrumentation-fastapi (>=0.58b0,<0.59)",
-    "opentelemetry-instrumentation-httpx (>=0.58b0,<0.59)"
+    "opentelemetry-instrumentation-httpx (>=0.58b0,<0.59)",
 ]
 
 [tool.poetry]
 package-mode = false
 
+[tool.poetry.dependencies]
+core = { version = "0.2.0", source = "local" } 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
