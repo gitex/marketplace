@@ -1,3 +1,5 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
 [private]
 default:
     @just --list
@@ -5,9 +7,6 @@ default:
 # Получить версию из pyproject.toml
 current-version:
     poetry version
-
-published-version:
-    poetry show core --latest 
 
 # Очистить предыдущие сборки
 clean:
@@ -18,12 +17,71 @@ build:
     poetry build
 
 # Настройка аутентификации для публикации в локальный репозиторий
-auth username password:
-    poetry config http-basic.local {{ username }} {{ password }}
+auth repository:
+    #!/usr/bin/env bash 
+    echo "Авторизация репозитория '{{ repository }}'..."; 
+    read -rp "Имя пользователя: " USERNAME;  
+    read -rp "Пароль: " PASSWORD; echo; 
+    poetry config http-basic.{{ repository }} "$USERNAME" "$PASSWORD"; 
+    echo "Вы авторизованы как '${USERNAME}'"
 
 # Опубликовать пакет core в локальный репозиторий
-publish:
-    poetry publish --repository local 
+publish repository:
+    poetry publish --repository {{ repository }} 
 
-# Выполнить сборку и публикацию пакета core
-sync: build publish
+# Выполнить релиз: сборка, авторизация и публикация пакета core
+release repository:
+    @just build  
+    @just auth {{ repository }}
+    @just publish {{ repository }}
+
+# (wip)
+publish-soft repository:
+    #!/usr/bin/env sh 
+    set +e  # не падаем при exit 0
+
+    out=$(poetry publish --repository {{ repository }} 2>&1)
+    code="$(printf '%s' "$out" \
+               | grep -oE 'HTTP (Error|status code) [0-9]{3}' \
+               | grep -oE '[0-9]{3}' \
+               | tail -1)"
+    old_status=$?
+    
+    # if [ $old_status -eq 0 ]; then
+    #     echo "✅ publish: OK"
+    #     exit 0
+    # fi
+
+    case "$code" in
+        401)
+          echo "❌ 401 Unauthorized: нет/неверные креды. Проверь http-basic/tokens."
+          echo "   Подсказка: poetry config http-basic.{{ repository }} <user> <pass>"
+          ;;
+        403)
+          echo "❌ 403 Forbidden: доступ запрещён (прав нет/токен без scope)."
+          ;;
+        405)
+          echo "❌ 405 Method Not Allowed: скорее всего публикуете на /simple/."
+          echo "   Для pypiserver используйте базовый URL (без /simple)."
+          ;;
+        409)
+          echo "⚠️ 409 Conflict: такая версия уже существует в хранилище."
+          ;;
+        400)
+          echo "❌ 400 Bad Request: метаданные/файл некорректны (проверь pyproject/build)."
+          ;;
+        413)
+          echo "❌ 413 Payload Too Large: сервер ограничил размер upload."
+          ;;
+        5??)
+          echo "❌ $code Server Error: сервер pypi упал/ошибка на стороне репо."
+          ;;
+        "")
+          echo "❌ HTTP $code: ошибка публикации."
+          ;;
+      esac
+
+      if [ "$code" = "409" ]; then
+        exit 0
+      fi
+      exit $old_status
