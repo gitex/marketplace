@@ -1,10 +1,15 @@
 x-defaults:
-  x-postgres-healthcheck: &x-postgres-healthcheck 
-    healthcheck: 
-      test: ["CMD-SHELL", "pg_is_ready -U postgres -h localhost"]
-      interval: 5s 
-      timeout: 5s 
-      retries: 20 
+  x-postgres-healthcheck: &x-postgres-healthcheck
+    healthcheck:
+      test: ["CMD-SHELL", "pg_is_ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  x-local-pypi-env-vars:
+    args:
+      LOCAL_PYPI_URL: $LOCAL_PYPI_URL
+      LOCAL_PYPI_USER: $LOCAL_PYPI_USER
+      LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD
 
 networks:
   web: {}
@@ -15,65 +20,65 @@ services:
   # ----- infra -----
   pypi:
     container_name: "pypi"
-    image: pypiserver/pypiserver:latest 
-    command: -P /data/.htpasswd -a update,download,list -p 8080 /data/packages 
+    image: pypiserver/pypiserver:latest
+    command: -P /data/.htpasswd -a update,download,list -p 8080 /data/packages
     volumes:
-      - ./pypi-data/packages:/data/packages 
-      - ./pypi-data/.htpasswd:/data/.htpasswd:ro 
+      - ./pypi-data/packages:/data/packages
+      - ./pypi-data/.htpasswd:/data/.htpasswd:ro
     ports:
       - "8010:8080"
     profiles: ["pypi"]
 
   kafka:
     container_name: "kafka"
-    image: bitnami/kafka:latest 
+    image: bitnami/kafka:latest
     env_file: ./infra/env/.kafka.env
     volumes:
-      - kafka-data:/bitname/kafka 
+      - kafka-data:/bitname/kafka
     ports:
       - 29092:29092
       - 9092:9092
     healthcheck:
-      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics/sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
-      interval: 10s 
-      retries: 10 
-      timeout: 5s 
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1
+      interval: 10s
+      retries: 10
+      timeout: 5s
     profiles: ["users", "catalog", "auth", "notifications", "recommendations"]
 
   kafka-ui:
-    container_name: kafka-ui 
-    image: provectuslabs/kafka-ui:latest 
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
     env_file: ./infra/env/.kafka_ui.env
-    ports: 
-      - 8081:8080 
+    ports:
+      - 8081:8080
     depends_on:
       kafka:
         condition: service_healthy
     profiles: ["monitoring"]
 
   redis:
-    container_name: redis 
+    container_name: redis
     image: redis:7
     ports: ["6379:6379"]
     restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s 
-      timeout: 3s 
-      retries: 20 
+      interval: 5s
+      timeout: 3s
+      retries: 20
     profiles: ["auth"]
 
   mailhog:
-    image: mailhog/mailhog:latest 
-    container_name: mailhog 
+    image: mailhog/mailhog:latest
+    container_name: mailhog
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI 
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
     profiles: ["notifications"]
   #
-  # gateway: 
+  # gateway:
   #   container_name: "gateway"
-  #   image: nginx:1.27-alpine 
+  #   image: nginx:1.27-alpine
   #   ports:
   #     - "80:80"
   #   volumes:
@@ -83,14 +88,15 @@ services:
   #
   prometheus:
     image: prom/prometheus:v2.53.1
-    container_name: prometheus 
-    command: [
-      "--config.file=/etc/prometheus/prometheus.yml",
-      "--storage.tsdb.retention.time=15d",
-    ]
+    container_name: prometheus
+    command:
+      [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--storage.tsdb.retention.time=15d",
+      ]
     volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro 
-      - prometheus_data:/prometheus 
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     restart: unless-stopped
@@ -98,33 +104,33 @@ services:
 
   grafana:
     image: grafana/grafana:11.1.0
-    container_name: grafana 
-    environment: 
-      - GF_SECURITY_ADMIN_USER=admin 
-      - GF_SECURITY_ADMIN_PASSWORD=admin 
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - grafana_data:/var/lib/grafana 
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro 
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "3000:3000"
     depends_on:
       - prometheus
-      - loki 
+      - loki
     profiles: ["monitoring"]
 
   loki:
     image: grafana/loki:main-37eddab
-    container_name: loki 
+    container_name: loki
     command: [
-      "-config.file=/etc/loki/local-config.yml", 
-      # "-validation.allow-structured-metadata=false",
-      "-config.expand-env=true"
-    ]
+        "-config.file=/etc/loki/local-config.yml",
+        # "-validation.allow-structured-metadata=false",
+        "-config.expand-env=true",
+      ]
     ports:
       - "3100:3100"
     volumes:
-      - ./infra/loki/local-config.yml:/etc/loki/local-config.yml:ro 
-      - loki_data:/loki 
+      - ./infra/loki/local-config.yml:/etc/loki/local-config.yml:ro
+      - loki_data:/loki
     restart: unless-stopped
     profiles: ["monitoring"]
 
@@ -133,12 +139,12 @@ services:
     container_name: promtail
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - /var/log:/var/log:ro 
-      - /var/run/docker.sock:/var/run/docker.sock:ro 
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro 
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./infra/promtail/config.yml:/etc/promtail/config.yml:ro
-    depends_on: 
-      - loki 
+    depends_on:
+      - loki
     restart: unless-stopped
     profiles: ["monitoring"]
 
@@ -149,34 +155,34 @@ services:
     profiles: ["monitoring"]
 
     # ----- databases -----
-  auth-users-db:  # auth + users postgres-healthcheck 
-    <<: *x-postgres-healthcheck
-    image: postgres:16
-    container_name: auth-users-db 
-    env_file: ./infra/env/.auth_users_db.env 
-    ports: ["5433:5432"]
-    volumes: 
-      - pgdata-auth-users:/var/lib/postgresql/data 
-    profiles: ["auth", "users"]
-
-  orders-payments-db:  # orders + payments postgres-healthcheck
+  auth-users-db: # auth + users postgres-healthcheck
     <<: [*x-postgres-healthcheck]
     image: postgres:16
-    container_name: orders-payments-db 
-    env_file: ./infra/env/.orders_payments_db.env 
+    container_name: auth-users-db
+    env_file: ./infra/env/.auth_users_db.env
+    ports: ["5433:5432"]
+    volumes:
+      - pgdata-auth-users:/var/lib/postgresql/data
+    profiles: ["auth", "users"]
+
+  orders-payments-db: # orders + payments postgres-healthcheck
+    <<: [*x-postgres-healthcheck]
+    image: postgres:16
+    container_name: orders-payments-db
+    env_file: ./infra/env/.orders_payments_db.env
     ports: ["5434:5432"]
     volumes:
-      - pgdata-orders-payments:/var/lib/postgresql/data 
+      - pgdata-orders-payments:/var/lib/postgresql/data
     profiles: ["orders", "payments"]
 
   catalog-db:
     <<: [*x-postgres-healthcheck]
     image: postgres:16
-    container_name: catalog-db 
-    env_file: ./infra/env/.catalog.env 
+    container_name: catalog-db
+    env_file: ./infra/env/.catalog.env
     ports: ["5435:5432"]
     volumes:
-      - pgdata-catalog:/var/lib/postgresql/data 
+      - pgdata-catalog:/var/lib/postgresql/data
     profiles: ["catalog"]
 
   notifications-db:
@@ -185,45 +191,51 @@ services:
     container_name: notifications-db
     env_file: ./infra/env/example.notifications_db.env
     ports: ["5436:5432"]
-    volumes: 
-      - pgdata-notifications:/var/lib/postgresql/data 
+    volumes:
+      - pgdata-notifications:/var/lib/postgresql/data
     profiles: ["notifications"]
 
   # ----- services -----
   auth:
     build: ./services/auth
-    container_name: auth 
-    env_file: ./infra/env/.auth.env 
+    container_name: auth
+    env_file: ./infra/env/.auth.env
     ports: ["8005:8080"]
-    depends_on: 
+    depends_on:
       auth-users-db: { condition: service_healthy }
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["auth"]
 
   users:
-    build: 
+    build:
       context: ./services/users
-      args:
-        LOCAL_PYPI_URL: $LOCAL_PYPI_URL
-        LOCAL_PYPI_USER: $LOCAL_PYPI_USER 
-        LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD 
-    container_name: users 
-    env_file: 
+      # <<: [*x-local-pypi-env-vars]
+    container_name: users
+    env_file:
       - ./infra/env/.users.env
     volumes:
       - ./services/users:/app
     ports: ["8001:8000"]
     networks: [web]
+    restart: always
     depends_on:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["users"]
+    command: "fastapi dev ./src/main.py"
+    # healthcheck:
+    #   test: curl --fail http://localhost:8000/health || exit 1
+    #   interval: 2s
+    #   timeout: 5s
+    #   retries: 3
+    #   start_period: 5s
 
   catalog:
-    container_name: catalog 
-    build: ./services/catalog
-    env_file: ./infra/env/.catalog.env 
+    container_name: catalog
+    build:
+      context: ./services/catalog
+    env_file: ./infra/env/.catalog.env
     ports: ["8002:8000"]
     networks: [web]
     depends_on:
@@ -232,20 +244,20 @@ services:
     profiles: ["catalog"]
 
   orders:
-    container_name: orders 
-    build: ./services/orders 
+    container_name: orders
+    build: ./services/orders
     env_file: ./infra/env/.orders.env
     ports: ["8003:8000"]
     networks: [web]
     depends_on:
       orders-payments-db: { condition: service_healthy }
-      kafka: {condition: service_healthy }
+      kafka: { condition: service_healthy }
       # payments: { conditions: service_healthy }
     profiles: ["orders"]
 
   payments:
     container_name: payments
-    build: ./services/payments 
+    build: ./services/payments
     env_file: ./infra/env/.payments.env
     ports: ["8006:8080"]
     networks: [web]
@@ -255,13 +267,13 @@ services:
       kafka: { condition: service_healthy }
     profiles: ["payments"]
 
-  notifications: 
+  notifications:
     container_name: notifications
-    build: ./services/notifications 
-    env_file: ./infra/env/.notifications.env 
+    build: ./services/notifications
+    env_file: ./infra/env/.notifications.env
     ports: ["8004:8000"]
     networks: [web]
-    depends_on: 
+    depends_on:
       notifications-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
       mailhog: { condition: service_started }
@@ -270,23 +282,21 @@ services:
   recommendations:
     container_name: recommendations
     build: ./services/recommendations
-    env_file: ./infra/env/.recommendation.env 
+    env_file: ./infra/env/.recommendation.env
     ports: ["8007:8080"]
     depends_on:
       kafka: { condition: service_healthy }
     profiles: ["recommendations"]
 
-
 volumes:
+  # kafka
   kafka-data:
+  # infra
   prometheus_data:
   grafana_data:
   loki_data:
+  # db
   pgdata-auth-users:
   pgdata-orders-payments:
   pgdata-catalog:
   pgdata-notifications:
-
-
-
-   

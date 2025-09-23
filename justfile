@@ -44,7 +44,7 @@ PYPI_PROFILE := "pypi"
 
 up target="users":
     sudo docker compose --profile {{ PYPI_PROFILE }} up -d
-    sudo docker compose --profile {{ target }} up 
+    sudo docker compose --profile {{ target }} up -d
 
 down target="users":
     sudo docker compose --profile {{ PYPI_PROFILE }} down --remove-orphans

@@ -1,6 +1,6 @@
 [project]
 name = "core"
-version = "0.3.0"
+version = "0.8.0"
 authors = [
     {name = "Your Name",email = "you@example.com"}
 ]
@@ -10,10 +10,31 @@ packages = [{ include = "core", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = "^0.116.2"
-sqlmodel = "^0.0.25"
-asyncpg = "^0.30.0"
-pydantic-settings = "^2.10.1"
+opentelemetry-sdk = "^1.26"
+opentelemetry-instrumentation = "^0.47b0"
+prometheus-client = "^0.23.1"
+
+[project.optional-dependencies]
+pydantic = [
+    "pydantic>=2.10.1", 
+    "pydantic-settings>=2.10.1",
+]
+fastapi = [
+    "uvicorn (>=0.36.0,<0.37.0)",
+    "fastapi>=0.116.2", 
+    "alembic (>=1.16.5,<2.0.0)",
+    "opentelemetry-instrumentation-fastapi (>=0.58b0,<0.59)",
+]
+flask = ["flask>=3"]
+django = ["django>=5"]
+sqlalchemy = ["sqlalchemy>=2.0"]
+sqlmodel = ["sqlmodel>=0.0.25"]
+redis = ["redis>=5"]
+kafka = ["aiokafka (>=0.12.0,<0.13.0)"]
+httpx = [
+    "httpx (>=0.28.1,<0.29.0)", 
+    "opentelemetry-instrumentation-httpx (>=0.58b0,<0.59)"
+]
 
 [[tool.poetry.source]]
 name = "local"
