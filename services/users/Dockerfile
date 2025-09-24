@@ -1,5 +1,10 @@
-ARG PYTHON_VERSION=3.12 
+ARG PYTHON_VERSION=3.12
+ARG SOURCE_DIR="app"
+
+# Builder
 FROM python:${PYTHON_VERSION}-slim AS builder 
+
+ARG SOURCE_DIR
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -12,26 +17,39 @@ ENV POETRY_HOME=/opt/poetry \
     POETRY_VIRTUALENVS_IN_PROJECT=1 \
     PATH="/opt/poetry/bin:$PATH"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Add for security reasons
+# RUN adduser --home /${SOURCE_DIR} app 
+# USER app
+
+RUN apt-get update && \
+    apt-get upgrade --assume-yes && \
+    apt-get install -y --no-install-recommends \
     curl build-essential git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm --recursive --force /var/lib/apt/lists/*
 
 RUN curl -sSL https://install.python-poetry.org | python - \
     && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
 
-WORKDIR /app
 
-ARG LOCAL_PYPI_URL
-ARG LOCAL_PYPI_USER
-ARG LOCAL_PYPI_PASSWORD
+WORKDIR /${SOURCE_DIR}
 
-ENV POETRY_REPOSITORIES_LOCAL_URL=${LOCAL_PYPI_URL}
-ENV POETRY_HTTP_BASIC_LOCAL_USERNAME=${LOCAL_PYPI_USER}
-ENV POETRY_HTTP_BASIC_LOCAL_PASSWORD=${LOCAL_PYPI_PASSWORD}
+# Required for 'core' installation
+ARG INTERNAL_PYPI_SOURCE_NAME="internal"
+ARG INTERNAL_PYPI_SOURCE_URL
+ARG INTERNAL_PYPI_SOURCE_USER 
+ARG INTERNAL_PYPI_SOURCE_PASSWORD 
 
+ENV POETRY_REPOSITORIES_${INTERNAL_PYPI_SOURCE_NAME}_URL=${INTERNAL_PYPI_SOURCE_URL}
+ENV POETRY_HTTP_BASIC_${INTERNAL_PYPI_SOURCE_NAME}_USERNAME=${INTERNAL_PYPI_SOURCE_USER}
+ENV POETRY_HTTP_BASIC_${INTERNAL_PYPI_SOURCE_NAME}_PASSWORD=${INTERNAL_PYPI_SOURCE_PASSWORD}
+
+# Install packages
 COPY pyproject.toml poetry.lock ./ 
 
-# RUN poetry source add --priority=primary local ${LOCAL_PYPI_URL}
+RUN poetry export --without-hashes --format=requirements.txt > requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# RUN poetry config repositories.${INTERNAL_PYPI_SOURCE_NAME} ${INTERNAL_PYPI_SOURCE_URL}
 
 ARG INSTALL_DEV=false 
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
@@ -51,18 +69,26 @@ RUN if [ "$INSTALL_DEV" = "true" ]; then \
 # Runtime
 FROM python:${PYTHON_VERSION}-slim AS runtime 
 
+ARG SOURCE_DIR
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/${SOURCE_DIR}/.venv/bin:$PATH"
 
-RUN useradd -m appuser
-WORKDIR /app
+RUN apt-get update && \
+    apt-get upgrade --assume-yes && \
+    # cURL necessary to "healthcheck"
+    apt-get install curl --assume-yes && \
+    rm --recursive --force /var/lib/apt/lists/*
 
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app /app 
+# Add for security reasons
+# Need to replace because of https://pythonspeed.com/articles/root-capabilities-docker-security
+RUN useradd -m app 
+WORKDIR /${SOURCE_DIR}
 
-RUN chown -R appuser:appuser /app
-USER appuser 
+COPY --from=builder /${SOURCE_DIR}/.venv /${SOURCE_DIR}/.venv
+COPY --from=builder /${SOURCE_DIR} /${SOURCE_DIR} 
 
-
-
+# Add for security reasons
+RUN chown -R app:app /${SOURCE_DIR}
+USER app 

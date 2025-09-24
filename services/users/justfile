@@ -1,0 +1,14 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+[private]
+defaults:
+    @just --list
+
+# Настройка аутентификации для публикации в локальный репозиторий
+auth repository:
+    #!/usr/bin/env bash 
+    echo "Авторизация репозитория '{{ repository }}'..."; 
+    read -rp "Имя пользователя: " USERNAME;  
+    read -rp "Пароль: " PASSWORD; echo; 
+    poetry config http-basic.{{ repository }} "$USERNAME" "$PASSWORD"; 
+    echo "Вы авторизованы как '${USERNAME}'"

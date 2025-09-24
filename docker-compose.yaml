@@ -1,15 +1,14 @@
 x-defaults:
   x-postgres-healthcheck: &x-postgres-healthcheck
     healthcheck:
-      test: ["CMD-SHELL", "pg_is_ready"]
+      test: ["CMD-SHELL", "1"]
       interval: 10s
       timeout: 5s
       retries: 5
-  x-local-pypi-env-vars:
-    args:
-      LOCAL_PYPI_URL: $LOCAL_PYPI_URL
-      LOCAL_PYPI_USER: $LOCAL_PYPI_USER
-      LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD
+  x-local-pypi-env-vars: &x-local-pypi-env-vars
+    LOCAL_PYPI_URL: $LOCAL_PYPI_URL
+    LOCAL_PYPI_USER: $LOCAL_PYPI_USER
+    LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD
 
 networks:
   web: {}
@@ -27,6 +26,7 @@ services:
       - ./pypi-data/.htpasswd:/data/.htpasswd:ro
     ports:
       - "8010:8080"
+    networks: [web, default]
     profiles: ["pypi"]
 
   kafka:
@@ -163,6 +163,13 @@ services:
     ports: ["5433:5432"]
     volumes:
       - pgdata-auth-users:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     profiles: ["auth", "users"]
 
   orders-payments-db: # orders + payments postgres-healthcheck
@@ -210,7 +217,12 @@ services:
   users:
     build:
       context: ./services/users
-      # <<: [*x-local-pypi-env-vars]
+      args:
+        INTERNAL_PYPI_SOURCE_URL: $INTERNAL_PYPI_SOURCE_URL
+        INTERNAL_PYPI_SOURCE_NAME: $INTERNAL_PYPI_SOURCE_NAME
+        INTERNAL_PYPI_SOURCE_USER: $INTERNAL_PYPI_SOURCE_USER
+        INTERNAL_PYPI_SOURCE_PASSWORD: $INTERNAL_PYPI_SOURCE_PASSWORD
+        # <<: [*x-local-pypi-env-vars]
     container_name: users
     env_file:
       - ./infra/env/.users.env
@@ -223,13 +235,13 @@ services:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["users"]
-    command: "fastapi dev ./src/main.py"
-    # healthcheck:
-    #   test: curl --fail http://localhost:8000/health || exit 1
-    #   interval: 2s
-    #   timeout: 5s
-    #   retries: 3
-    #   start_period: 5s
+    command: "fastapi ./src/main.py"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "./healthcheck.sh"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   catalog:
     container_name: catalog
