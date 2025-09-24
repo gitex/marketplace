@@ -1,79 +1,63 @@
 ARG PYTHON_VERSION=3.12
-ARG SOURCE_DIR="app"
 
-# Builder
+# ----------- Stage Build -------------
 FROM python:${PYTHON_VERSION}-slim AS builder 
 
-ARG SOURCE_DIR
+# uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_NO_CACHE=1
+
+# uv output level: info, debug, trace
+ARG UV_LOG_LEVEL=info
+ENV RUST_LOG=$UV_LOG_LEVEL
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-ARG POETRY_VERSION=2.2.0 
-ENV POETRY_HOME=/opt/poetry \ 
-    POETRY_NO_INTERACTION=1 \ 
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    PATH="/opt/poetry/bin:$PATH"
-
-# Add for security reasons
-# RUN adduser --home /${SOURCE_DIR} app 
-# USER app
-
-RUN apt-get update && \
-    apt-get upgrade --assume-yes && \
-    apt-get install -y --no-install-recommends \
-    curl build-essential git \
-    && rm --recursive --force /var/lib/apt/lists/*
-
-RUN curl -sSL https://install.python-poetry.org | python - \
-    && ln -s ${POETRY_HOME}/bin/poetry /usr/local/bin/poetry
-
-
-WORKDIR /${SOURCE_DIR}
-
 # Required for 'core' installation
-ARG INTERNAL_PYPI_SOURCE_NAME="internal"
-ARG INTERNAL_PYPI_SOURCE_URL
-ARG INTERNAL_PYPI_SOURCE_USER 
-ARG INTERNAL_PYPI_SOURCE_PASSWORD 
+ARG INTERNAL_PYPI_INDEX_URL \
+    INTERNAL_PYPI_INDEX_USER \ 
+    INTERNAL_PYPI_INDEX_PASSWORD 
 
-ENV POETRY_REPOSITORIES_${INTERNAL_PYPI_SOURCE_NAME}_URL=${INTERNAL_PYPI_SOURCE_URL}
-ENV POETRY_HTTP_BASIC_${INTERNAL_PYPI_SOURCE_NAME}_USERNAME=${INTERNAL_PYPI_SOURCE_USER}
-ENV POETRY_HTTP_BASIC_${INTERNAL_PYPI_SOURCE_NAME}_PASSWORD=${INTERNAL_PYPI_SOURCE_PASSWORD}
+ENV UV_DEFAULT_INDEX="internal=${INTERNAL_PYPI_INDEX_URL}"  \
+    UV_INDEX_INTERNAL_USERNAME=${INTERNAL_PYPI_INDEX_USER} \
+    UV_INDEX_INTERNAL_PASSWORD=${INTERNAL_PYPI_INDEX_PASSWORD}
 
-# Install packages
-COPY pyproject.toml poetry.lock ./ 
+WORKDIR /app
 
-RUN poetry export --without-hashes --format=requirements.txt > requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
 
-# RUN poetry config repositories.${INTERNAL_PYPI_SOURCE_NAME} ${INTERNAL_PYPI_SOURCE_URL}
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project 
 
-ARG INSTALL_DEV=false 
+ARG INSTALL_DEV=false
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
-    poetry install --no-root --with dev ; \
-    else \
-    poetry install --no-root; \
-    fi
+    uv sync --locked --no-install-project; \
+    else \ 
+    uv sync --locked --no-dev --no-install-project; \
+    fi 
 
 COPY . . 
 
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
-    poetry install --with dev ; \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$INSTALL_DEV" = "true" ]; then \
+    uv sync --locked; \
     else \
-    poetry install; \
+    uv sync --locked --no-dev; \
     fi
 
 # Runtime
-FROM python:${PYTHON_VERSION}-slim AS runtime 
-
-ARG SOURCE_DIR
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/${SOURCE_DIR}/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH"
 
 RUN apt-get update && \
     apt-get upgrade --assume-yes && \
@@ -84,11 +68,16 @@ RUN apt-get update && \
 # Add for security reasons
 # Need to replace because of https://pythonspeed.com/articles/root-capabilities-docker-security
 RUN useradd -m app 
-WORKDIR /${SOURCE_DIR}
+WORKDIR /app
 
-COPY --from=builder /${SOURCE_DIR}/.venv /${SOURCE_DIR}/.venv
-COPY --from=builder /${SOURCE_DIR} /${SOURCE_DIR} 
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app 
+
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="$VIRTUAL_ENV/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 # Add for security reasons
-RUN chown -R app:app /${SOURCE_DIR}
+RUN chown -R app:app /app
 USER app 

@@ -8,7 +8,7 @@ from src.users.dependencies import UserServiceDependency
 from src.users.schemas import UserRead
 
 router = APIRouter(
-    prefix="users/",
+    prefix="/users",
     tags=["users"],
 )
 

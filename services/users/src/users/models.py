@@ -1,11 +1,11 @@
-from core.orm.sqlmodel import TimestampMixin, UUIDMixin
+from core.orm.sqlmodel import UUIDMixin
 from pydantic import EmailStr
-from sqlmodel import Column, Enum, Field, SQLModel
+from sqlmodel import Column, Enum, Field
 
 from .constants import Role
 
 
-class User(SQLModel, UUIDMixin, TimestampMixin, table=True):  # type: ignore
+class User(UUIDMixin, table=True):  # type: ignore
     email: EmailStr
     username: str
     phone: str | None = None

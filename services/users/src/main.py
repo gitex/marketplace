@@ -4,14 +4,14 @@ from contextlib import asynccontextmanager
 from core.web.fastapi.healthcheck import healthcheck_router
 from fastapi import FastAPI, Request
 
-from .config import settings
-from .database import init_db
-from .users.router import router as users_router
+from src.config import settings
+from src.database import init_db
+from src.users.router import router as users_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    await init_db()
 
     yield
 

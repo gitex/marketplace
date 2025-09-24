@@ -1,39 +1,42 @@
-from typing import Annotated, Generator
+from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import Depends
 from pydantic_settings import SettingsError
-from sqlalchemy import Engine
-from sqlmodel import Session, SQLModel, create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlmodel import Session, SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from .config import settings
 
 
-def build_engine() -> Engine:
+async def build_engine() -> AsyncEngine:
     postgres_dsn = settings.postgres_dsn
 
     if not postgres_dsn:
         raise SettingsError("Environment variable POSTGRES_DSN is required.")
 
-    return create_engine(
+    return create_async_engine(
         postgres_dsn.encoded_string(),
-        connect_args={"check_same_thread": False},
-        echo=settings.debug,
+        echo=settings.postgres_echo,
+        future=True,
+        pool_size=20,
     )
 
 
-def init_db() -> None:
+async def init_db() -> None:
     # from .addresses.models import Address  # noqa: F401
     # from .users.models import User  # noqa: F401
 
-    engine = build_engine()
+    engine = await build_engine()
 
-    SQLModel.metadata.create_all(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
 
 
-def get_session() -> Generator[Session, None, None]:
-    engine = build_engine()
+async def get_session() -> AsyncGenerator[AsyncSession, Any]:
+    engine = await build_engine()
 
-    with Session(engine) as session:
+    async with AsyncSession(engine) as session:
         yield session
 
 

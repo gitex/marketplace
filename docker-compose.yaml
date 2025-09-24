@@ -215,30 +215,32 @@ services:
     profiles: ["auth"]
 
   users:
+    image: market/users
     build:
       context: ./services/users
       args:
-        INTERNAL_PYPI_SOURCE_URL: $INTERNAL_PYPI_SOURCE_URL
-        INTERNAL_PYPI_SOURCE_NAME: $INTERNAL_PYPI_SOURCE_NAME
-        INTERNAL_PYPI_SOURCE_USER: $INTERNAL_PYPI_SOURCE_USER
-        INTERNAL_PYPI_SOURCE_PASSWORD: $INTERNAL_PYPI_SOURCE_PASSWORD
+        INTERNAL_PYPI_INDEX_URL: $INTERNAL_PYPI_INDEX_URL
+        INTERNAL_PYPI_INDEX_USER: $INTERNAL_PYPI_INDEX_USER
+        INTERNAL_PYPI_INDEX_PASSWORD: $INTERNAL_PYPI_INDEX_PASSWORD
+      network:
+        host
         # <<: [*x-local-pypi-env-vars]
     container_name: users
     env_file:
       - ./infra/env/.users.env
     volumes:
-      - ./services/users:/app
+      - ./services/users/src:/app/src
     ports: ["8001:8000"]
-    networks: [web]
+    networks: [web, default]
     restart: always
     depends_on:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["users"]
-    command: "fastapi ./src/main.py"
+    command: "fastapi dev src/main.py"
     healthcheck:
       test: ["CMD", "sh", "-c", "./healthcheck.sh"]
-      interval: 2s
+      interval: 5s
       timeout: 5s
       retries: 3
       start_period: 5s
