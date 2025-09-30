@@ -228,8 +228,10 @@ services:
     container_name: users
     env_file:
       - ./infra/env/.users.env
+    # перенести переменные
     volumes:
-      - ./services/users/src:/app/src
+      - ./services/users:/app
+      - /app/.venv/ # Stops local .venv getting mounted
     ports: ["8001:8000"]
     networks: [web, default]
     restart: always
@@ -237,7 +239,8 @@ services:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["users"]
-    command: "fastapi dev src/main.py"
+    # command: "fastapi dev src/main.py"
+    command: ["sleep", "infinity"]
     healthcheck:
       test: ["CMD", "sh", "-c", "./healthcheck.sh"]
       interval: 5s

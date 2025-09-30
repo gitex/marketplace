@@ -7,7 +7,7 @@ from .models import User
 
 
 class UserService:
-    async def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession):
         self.session = session
 
     async def create(self, user: dict) -> User:

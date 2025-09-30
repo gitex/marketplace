@@ -1,8 +1,15 @@
 import logging
-from functools import lru_cache
 
-from pydantic import KafkaDsn, PostgresDsn, RedisDsn
+from pydantic import Field, KafkaDsn, PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Database(BaseSettings):
+    model_config = SettingsConfigDict()
+
+    url: PostgresDsn = Field(alias="DATABASE_URL")
+    echo: bool = Field(alias="DATABASE_ECHO", default=False)
+    connections: int = Field(alias="DATABASE_POOL_SIZE", default=20)
 
 
 class Settings(BaseSettings):
@@ -12,19 +19,21 @@ class Settings(BaseSettings):
     log_level: str = logging.getLevelName(logging.INFO)
     reload: bool = False
     workers: int = 1
-    postgres_dsn: PostgresDsn | None = None
-    postgres_echo: bool = False
     redis_dsn: RedisDsn | None = None
     kafka_broker: KafkaDsn | None = None
 
+    database: Database
+
     model_config = SettingsConfigDict(
-        validate_default=True, env_file=(".env",), extra="ignore"
+        extra="ignore",
+        env_prefix="",
     )
 
 
-@lru_cache(maxsize=None)
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(
+        database=Database(),
+    )
 
 
-settings: Settings = get_settings()
+settings = get_settings()

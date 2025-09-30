@@ -1,13 +1,13 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlmodel import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_session
 from src.users.services import UserService
 
 
-def get_user_service(session: Session = Depends(get_session)):
+async def get_user_service(session: Annotated[AsyncSession, Depends(get_session)]):
     return UserService(session)
 
 

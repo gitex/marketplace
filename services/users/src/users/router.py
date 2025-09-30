@@ -21,7 +21,7 @@ async def get_users(
     """
     Получить всех пользователей.
     """
-    users, total = service.list(offset=params.offset, limit=params.limit)
+    users, total = await service.list(offset=params.offset, limit=params.limit)
     return Page(total=total, items=users, **params.model_dump())
 
 
@@ -31,7 +31,7 @@ async def get_user(
     service: UserServiceDependency,
 ):
     """Получить пользователя по id."""
-    user = service.get(user_id)
+    user = await service.get(user_id)
 
     if not user:
         raise HTTPException(
@@ -48,7 +48,7 @@ async def delete_user(
 ):
     """Удалить пользователя по id."""
 
-    deleted = service.delete(user_id)
+    deleted = await service.delete(user_id)
 
     if not deleted:
         raise HTTPException(

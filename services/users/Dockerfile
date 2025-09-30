@@ -1,22 +1,49 @@
 ARG PYTHON_VERSION=3.12
+ARG USERNAME=app 
+ARG USER_UID=1000 
+ARG USER_GID=${USER_UID}
 
-# ----------- Stage Build -------------
-FROM python:${PYTHON_VERSION}-slim AS builder 
+# ----------- Stage 1: Base ------------
+FROM python:${PYTHON_VERSION}-slim AS base
+
+ARG USERNAME
+ARG USER_UID
+ARG USER_GID
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+RUN addgroup --gid ${USER_GID} --system app \
+    && adduser --shell \
+    /bin/false --disabled-password --uid ${USER_UID} --system --group ${USERNAME}
+
+# ----------- Stage 2: Build -------------
+FROM base AS builder 
+
+ARG USERNAME
+
+RUN apt-get update && \
+    apt-get install -y make git build-essential sudo curl apt-transport-https && \
+    rm --recursive --force /var/lib/apt/lists/* &&\
+    echo ${USERNAME} ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/${USERNAME} \
+    && chmod 0440 /etc/sudoers.d/${USERNAME}
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
 
 # uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_NO_CACHE=1
-
 # uv output level: info, debug, trace
 ARG UV_LOG_LEVEL=info
-ENV RUST_LOG=$UV_LOG_LEVEL
 
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_NO_CACHE=1 \
+    RUST_LOG=$UV_LOG_LEVEL
 
 # Required for 'core' installation
 ARG INTERNAL_PYPI_INDEX_URL \
@@ -26,10 +53,6 @@ ARG INTERNAL_PYPI_INDEX_URL \
 ENV UV_DEFAULT_INDEX="internal=${INTERNAL_PYPI_INDEX_URL}"  \
     UV_INDEX_INTERNAL_USERNAME=${INTERNAL_PYPI_INDEX_USER} \
     UV_INDEX_INTERNAL_PASSWORD=${INTERNAL_PYPI_INDEX_PASSWORD}
-
-WORKDIR /app
-
-COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
@@ -52,32 +75,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev; \
     fi
 
-# Runtime
+# ------------- Stage 3: Runtime ------------------
 FROM python:${PYTHON_VERSION}-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:$PATH"
+ARG USER_UID
+ARG USER_GID
+ARG USERNAME
+ARG VENV_PATH = "/app/.venv"
 
-RUN apt-get update && \
-    apt-get upgrade --assume-yes && \
-    # cURL necessary to "healthcheck"
-    apt-get install curl --assume-yes && \
-    rm --recursive --force /var/lib/apt/lists/*
+WORKDIR /app
 
 # Add for security reasons
 # Need to replace because of https://pythonspeed.com/articles/root-capabilities-docker-security
-RUN useradd -m app 
-WORKDIR /app
+USER $USERNAME
 
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/.venv $VENV_PATH 
 COPY --from=builder /app /app 
 
-ENV VIRTUAL_ENV=/app/.venv \
-    PATH="$VIRTUAL_ENV/bin:$PATH" \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# Add for security reasons
-RUN chown -R app:app /app
-USER app 
