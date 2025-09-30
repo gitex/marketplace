@@ -239,8 +239,7 @@ services:
       auth-users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["users"]
-    # command: "fastapi dev src/main.py"
-    command: ["sleep", "infinity"]
+    command: "fastapi dev src/main.py --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD", "sh", "-c", "./healthcheck.sh"]
       interval: 5s

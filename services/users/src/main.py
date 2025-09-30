@@ -9,14 +9,12 @@ from src.users.router import router as users_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # await init_db()
-
     yield
 
 
 app = FastAPI(
     debug=settings.debug,
-    title=settings.app_name,
+    title=settings.name,
     lifespan=lifespan,
 )
 
@@ -32,15 +30,3 @@ app.include_router(users_router)
 #     process_time = time.perf_counter() - start_time
 #     response.headers["X-Process-Time"] = process_time
 #     return response
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        app,
-        port=settings.port,
-        reload=settings.reload,
-        workers=settings.workers,
-        log_level=settings.log_level,
-    )
