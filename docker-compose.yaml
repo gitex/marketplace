@@ -1,14 +1,14 @@
 x-defaults:
   x-postgres-healthcheck: &x-postgres-healthcheck
-    healthcheck:
-      test: ["CMD-SHELL", "1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    test: ["CMD-SHELL", "pg_isready", "-U postgres || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
   x-local-pypi-env-vars: &x-local-pypi-env-vars
-    LOCAL_PYPI_URL: $LOCAL_PYPI_URL
-    LOCAL_PYPI_USER: $LOCAL_PYPI_USER
-    LOCAL_PYPI_PASSWORD: $LOCAL_PYPI_PASSWORD
+    INTERNAL_PYPI_INDEX_URL: $INTERNAL_PYPI_INDEX_URL
+    INTERNAL_PYPI_INDEX_USER: $INTERNAL_PYPI_INDEX_USER
+    INTERNAL_PYPI_INDEX_PASSWORD: $INTERNAL_PYPI_INDEX_PASSWORD
 
 networks:
   web: {}
@@ -155,90 +155,104 @@ services:
     profiles: ["monitoring"]
 
     # ----- databases -----
-  auth-users-db: # auth + users postgres-healthcheck
-    <<: [*x-postgres-healthcheck]
+  auth-db:
     image: postgres:16
-    container_name: auth-users-db
-    env_file: ./infra/env/.auth_users_db.env
+    container_name: auth-db
+    env_file: ./infra/env/.auth_db.env
     ports: ["5433:5432"]
     volumes:
-      - pgdata-auth-users:/var/lib/postgresql/data
+      - pgdata-auth:/var/lib/postgresql/data
     restart: always
+    profiles: ["auth"]
     healthcheck:
-      test: ["CMD", "pg_isready", "-U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    profiles: ["auth", "users"]
+      <<: [*x-postgres-healthcheck]
+    #   test: ["CMD-SHELL", "pg_isready", "postgres || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    #   start_period: 10s
+
+  users-db:
+    image: postgres:16
+    container_name: users-db
+    env_file: ./infra/env/.users_db.env
+    ports: ["5434:5432"]
+    volumes:
+      - pgdata-users:/var/lib/postgresql/data
+    restart: always
+    profiles: ["users"]
+    healthcheck:
+      <<: [*x-postgres-healthcheck]
 
   orders-payments-db: # orders + payments postgres-healthcheck
-    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: orders-payments-db
     env_file: ./infra/env/.orders_payments_db.env
-    ports: ["5434:5432"]
+    ports: ["5435:5432"]
     volumes:
       - pgdata-orders-payments:/var/lib/postgresql/data
     profiles: ["orders", "payments"]
 
   catalog-db:
-    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: catalog-db
     env_file: ./infra/env/.catalog.env
-    ports: ["5435:5432"]
+    ports: ["5436:5432"]
     volumes:
       - pgdata-catalog:/var/lib/postgresql/data
     profiles: ["catalog"]
 
   notifications-db:
-    <<: [*x-postgres-healthcheck]
     image: postgres:16
     container_name: notifications-db
     env_file: ./infra/env/example.notifications_db.env
-    ports: ["5436:5432"]
+    ports: ["5437:5432"]
     volumes:
       - pgdata-notifications:/var/lib/postgresql/data
     profiles: ["notifications"]
 
   # ----- services -----
   auth:
-    build: ./services/auth
+    image: market/auth
+    build:
+      context: ./services/auth
+      args:
+        <<: [*x-local-pypi-env-vars]
+      network: host
     container_name: auth
     env_file: ./infra/env/.auth.env
+    volumes:
+      - ./services/auth:/app
+      - /app/.venv/ # Stops local .venv getting mounted
     ports: ["8005:8080"]
+    restart: always
+    # command: "fastapi dev src/main.py --host 0.0.0.0 --port 8000"
+    command: ["sleep", "infinity"]
     depends_on:
-      auth-users-db: { condition: service_healthy }
+      auth-db: { condition: service_healthy }
       redis: { condition: service_healthy }
       kafka: { condition: service_healthy }
     profiles: ["auth"]
 
   users:
+    container_name: users
     image: market/users
     build:
       context: ./services/users
       args:
-        INTERNAL_PYPI_INDEX_URL: $INTERNAL_PYPI_INDEX_URL
-        INTERNAL_PYPI_INDEX_USER: $INTERNAL_PYPI_INDEX_USER
-        INTERNAL_PYPI_INDEX_PASSWORD: $INTERNAL_PYPI_INDEX_PASSWORD
-      network:
-        host
-        # <<: [*x-local-pypi-env-vars]
-    container_name: users
+        <<: [*x-local-pypi-env-vars]
+      network: host
     env_file:
       - ./infra/env/.users.env
-    # перенести переменные
     volumes:
       - ./services/users:/app
       - /app/.venv/ # Stops local .venv getting mounted
     ports: ["8001:8000"]
-    networks: [web, default]
+    networks: [web]
     restart: always
     depends_on:
-      auth-users-db: { condition: service_healthy }
+      users-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
-    profiles: ["users"]
     command: "fastapi dev src/main.py --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD", "sh", "-c", "./healthcheck.sh"]
@@ -246,6 +260,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    profiles: ["users"]
 
   catalog:
     container_name: catalog
@@ -312,7 +327,8 @@ volumes:
   grafana_data:
   loki_data:
   # db
-  pgdata-auth-users:
+  pgdata-users:
+  pgdata-auth:
   pgdata-orders-payments:
   pgdata-catalog:
   pgdata-notifications:
