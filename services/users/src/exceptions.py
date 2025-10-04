@@ -1,2 +1,6 @@
-class SettingNotFound(ValueError):
-    """Настройки не найдены"""
+class ApplicationError(Exception):
+    pass
+
+
+class SettingNotFound(ApplicationError):
+    pass

@@ -7,7 +7,7 @@ from src.database import get_session
 from src.users.services import UserService
 
 
-async def get_user_service(session: Annotated[AsyncSession, Depends(get_session)]):
+def get_user_service(session: Annotated[AsyncSession, Depends(get_session)]):
     return UserService(session)
 
 

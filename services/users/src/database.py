@@ -23,7 +23,6 @@ engine = create_async_engine(
 #         await conn.run_sync(SQLModel.metadata.create_all)
 
 
-# @asynccontextmanager
 async def get_session():
     async with AsyncSession(engine) as session:
         yield session

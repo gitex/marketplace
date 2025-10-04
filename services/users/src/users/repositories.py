@@ -7,7 +7,7 @@ from .models import User
 from .schemas import UserCreate
 
 
-class UserService:
+class UserRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
